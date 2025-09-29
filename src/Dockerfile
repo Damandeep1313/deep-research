@@ -1,28 +1,29 @@
-# Use a lightweight Node.js base image for stability
+# Use a lightweight Node.js base image
 FROM node:20-slim
 
 # Set the working directory inside the container
-# This is where all files will be copied and commands executed
 WORKDIR /usr/src/app
 
 # --- Dependency Installation Stage ---
+# Access package.json/lock file from the PARENT directory (../)
+# The context root is 'src', so '..' refers to the project root.
+COPY ../package.json .
+COPY ../package-lock.json .
 
-# Copy dependency files (package.json and lock file) from the BUILD CONTEXT (which is the project root)
-# These files are needed to run npm ci
-COPY package.json .
-COPY package-lock.json .
-
-# Install production dependencies only (for smaller image size)
+# Install production dependencies
 RUN npm ci --only=production
 
 # --- Application Code Stage ---
 
-# Copy the entire 'src' directory from the build context (root) into the container's WORKDIR
-COPY src ./src
+# Copy the source code (everything in the current context, which is 'src')
+# The contents of 'src' are copied to /usr/src/app in the container
+# NOTE: This line assumes Render's Root Directory is set to 'src'.
+COPY . .
 
 # Expose the port the Express server listens on
 EXPOSE 3051
 
 # The command to start the server
-# We use npx tsx to execute the TypeScript server file (api.ts)
-CMD ["npx", "tsx", "src/server.ts"]
+# Since the server file 'api.ts' is now at the root of the container WORKDIR,
+# we reference it directly.
+CMD ["npx", "tsx", "server.ts"]
