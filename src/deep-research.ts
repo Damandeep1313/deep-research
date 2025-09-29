@@ -4,7 +4,6 @@ import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
 
-// NOTE: We assume getModel has been updated to accept { apiKey: string }
 import { getModel, trimPrompt } from './ai/providers'; 
 import { systemPrompt } from './prompt';
 
@@ -200,14 +199,14 @@ export async function deepResearch({
   onProgress?: (progress: ResearchProgress) => void;
 }): Promise<ResearchResult> {
   
-  // Initialize Firecrawl with the key from the request header
-  const firecrawl = new FirecrawlApp({
-    apiKey: apiKeys.firecrawl,
-  });
+  // Initialize Firecrawl with the key from the request header
+  const firecrawl = new FirecrawlApp({
+    apiKey: apiKeys.firecrawl,
+  });
 
-  // Concurrency limit now hardcoded, as environment variable loading failed previously
-  const ConcurrencyLimit = 2;
-  
+  // Concurrency limit now hardcoded, as environment variable loading failed previously
+  const ConcurrencyLimit = 2;
+  
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -226,7 +225,7 @@ export async function deepResearch({
     query,
     learnings,
     numQueries: breadth,
-    apiKeys, // PASSING NEW PARAMETER
+    apiKeys, // PASSING NEW PARAMETER
   });
 
   reportProgress({
@@ -255,7 +254,7 @@ export async function deepResearch({
             query: serpQuery.query,
             result,
             numFollowUpQuestions: newBreadth,
-            apiKeys, // PASSING NEW PARAMETER
+            apiKeys, // PASSING NEW PARAMETER
           });
           const allLearnings = [...learnings, ...newLearnings.learnings];
           const allUrls = [...visitedUrls, ...newUrls];
@@ -279,7 +278,7 @@ export async function deepResearch({
               query: nextQuery,
               breadth: newBreadth,
               depth: newDepth,
-              apiKeys, // PASSING NEW PARAMETER
+              apiKeys, // PASSING NEW PARAMETER
               learnings: allLearnings,
               visitedUrls: allUrls,
               onProgress,
