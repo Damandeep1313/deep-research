@@ -1,10 +1,5 @@
-import { createFireworks } from '@ai-sdk/fireworks';
 import { createOpenAI } from '@ai-sdk/openai';
-import {
-  extractReasoningMiddleware,
-  LanguageModelV1,
-  wrapLanguageModel,
-} from 'ai';
+import { LanguageModelV1 } from 'ai';
 import { getEncoding } from 'js-tiktoken';
 
 import { RecursiveCharacterTextSplitter } from './text-splitter';
@@ -22,36 +17,30 @@ export function getProviders(apiKeys: ApiKeys) {
     baseURL: process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1',
   });
 
-  const fireworks = createFireworks({
-    apiKey: apiKeys.firecrawl,
-  });
-
   const customModel = process.env.CUSTOM_MODEL
     ? openai(process.env.CUSTOM_MODEL, {
         structuredOutputs: true,
       })
     : undefined;
 
-  const o3MiniModel = openai('o3-mini', {
-    reasoningEffort: 'medium',
+  const gpt4MiniModel = openai('gpt-4o-mini', {
     structuredOutputs: true,
   });
 
-  const deepSeekR1Model = wrapLanguageModel({
-    model: fireworks(
-      'accounts/fireworks/models/deepseek-r1',
-    ) as LanguageModelV1,
-    middleware: extractReasoningMiddleware({ tagName: 'think' }),
-  });
+  function getModel({ apiKey }: { apiKey: string }): LanguageModelV1 {
+    // always build provider with request-scoped API key
+    const requestScopedOpenAI = createOpenAI({
+      apiKey,
+      baseURL: process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1',
+    });
 
-  function getModel(): LanguageModelV1 {
     if (customModel) return customModel;
-    const model = deepSeekR1Model ?? o3MiniModel;
-    if (!model) throw new Error('No model found');
-    return model as LanguageModelV1;
+    return requestScopedOpenAI('gpt-4o-mini', {
+      structuredOutputs: true,
+    });
   }
 
-  return { openai, fireworks, getModel };
+  return { openai, getModel };
 }
 
 // --- Prompt trimming ---
