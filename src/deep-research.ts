@@ -4,7 +4,7 @@ import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
 
-import { getProviders, trimPrompt } from './ai/providers';
+import { getModel, trimPrompt } from './ai/providers';
 import { systemPrompt } from './prompt';
 
 function log(...args: any[]) {
@@ -35,14 +35,8 @@ type ResearchResult = {
 };
 
 // ----------------------------------------------------
-// HELPER: get model from providers dynamically
-// ----------------------------------------------------
-function getModelForKeys(apiKeys: ApiKeys) {
-  const { getModel } = getProviders(apiKeys);
-  return getModel();
-}
-
 // take in user query, return a list of SERP queries
+// ----------------------------------------------------
 async function generateSerpQueries({
   query,
   numQueries = 3,
@@ -55,7 +49,7 @@ async function generateSerpQueries({
   apiKeys: ApiKeys;
 }) {
   const res = await generateObject({
-    model: getModelForKeys(apiKeys),
+    model: getModel({ apiKey: apiKeys.openai }),
     system: systemPrompt(),
     prompt: `Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of ${numQueries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other: <prompt>${query}</prompt>\n\n${
       learnings
@@ -79,11 +73,14 @@ async function generateSerpQueries({
         .describe(`List of SERP queries, max of ${numQueries}`),
     }),
   });
-  log(`Created ${res.object.queries.length} queries`, res.object.queries);
 
+  log(`Created ${res.object.queries.length} queries`, res.object.queries);
   return res.object.queries.slice(0, numQueries);
 }
 
+// ----------------------------------------------------
+// process SERP results into learnings
+// ----------------------------------------------------
 async function processSerpResult({
   query,
   result,
@@ -103,7 +100,7 @@ async function processSerpResult({
   log(`Ran ${query}, found ${contents.length} contents`);
 
   const res = await generateObject({
-    model: getModelForKeys(apiKeys),
+    model: getModel({ apiKey: apiKeys.openai }),
     abortSignal: AbortSignal.timeout(60_000),
     system: systemPrompt(),
     prompt: trimPrompt(
@@ -120,11 +117,14 @@ async function processSerpResult({
         ),
     }),
   });
-  log(`Created ${res.object.learnings.length} learnings`, res.object.learnings);
 
+  log(`Created ${res.object.learnings.length} learnings`, res.object.learnings);
   return res.object;
 }
 
+// ----------------------------------------------------
+// write final report
+// ----------------------------------------------------
 export async function writeFinalReport({
   prompt,
   learnings,
@@ -141,7 +141,7 @@ export async function writeFinalReport({
     .join('\n');
 
   const res = await generateObject({
-    model: getModelForKeys(apiKeys),
+    model: getModel({ apiKey: apiKeys.openai }),
     system: systemPrompt(),
     prompt: trimPrompt(
       `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n${learningsString}\n</learnings>`,
@@ -155,6 +155,9 @@ export async function writeFinalReport({
   return res.object.reportMarkdown + urlsSection;
 }
 
+// ----------------------------------------------------
+// write final answer
+// ----------------------------------------------------
 export async function writeFinalAnswer({
   prompt,
   learnings,
@@ -169,7 +172,7 @@ export async function writeFinalAnswer({
     .join('\n');
 
   const res = await generateObject({
-    model: getModelForKeys(apiKeys),
+    model: getModel({ apiKey: apiKeys.openai }),
     system: systemPrompt(),
     prompt: trimPrompt(
       `Given the following prompt from the user, write a final answer on the topic using the learnings from research. Follow the format specified in the prompt. Do not yap or babble or include any other text than the answer besides the format specified in the prompt. Keep the answer as concise as possible - usually it should be just a few words or maximum a sentence. Try to follow the format specified in the prompt (for example, if the prompt is using Latex, the answer should be in Latex. If the prompt gives multiple answer choices, the answer should be one of the choices).\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from research on the topic that you can use to help answer the prompt:\n\n<learnings>\n${learningsString}\n</learnings>`,
@@ -184,6 +187,9 @@ export async function writeFinalAnswer({
   return res.object.exactAnswer;
 }
 
+// ----------------------------------------------------
+// main deep research function
+// ----------------------------------------------------
 export async function deepResearch({
   query,
   breadth,
@@ -201,10 +207,7 @@ export async function deepResearch({
   visitedUrls?: string[];
   onProgress?: (progress: ResearchProgress) => void;
 }): Promise<ResearchResult> {
-  const firecrawl = new FirecrawlApp({
-    apiKey: apiKeys.firecrawl,
-  });
-
+  const firecrawl = new FirecrawlApp({ apiKey: apiKeys.firecrawl });
   const ConcurrencyLimit = 2;
 
   const progress: ResearchProgress = {
@@ -221,12 +224,7 @@ export async function deepResearch({
     onProgress?.(progress);
   };
 
-  const serpQueries = await generateSerpQueries({
-    query,
-    learnings,
-    numQueries: breadth,
-    apiKeys,
-  });
+  const serpQueries = await generateSerpQueries({ query, learnings, numQueries: breadth, apiKeys });
 
   reportProgress({
     totalQueries: serpQueries.length,
@@ -255,6 +253,7 @@ export async function deepResearch({
             numFollowUpQuestions: newBreadth,
             apiKeys,
           });
+
           const allLearnings = [...learnings, ...newLearnings.learnings];
           const allUrls = [...visitedUrls, ...newUrls];
 
@@ -269,9 +268,9 @@ export async function deepResearch({
             });
 
             const nextQuery = `
-            Previous research goal: ${serpQuery.researchGoal}
-            Follow-up research directions: ${newLearnings.followUpQuestions.map(q => `\n${q}`).join('')}
-          `.trim();
+Previous research goal: ${serpQuery.researchGoal}
+Follow-up research directions: ${newLearnings.followUpQuestions.map(q => `\n${q}`).join('')}
+            `.trim();
 
             return deepResearch({
               query: nextQuery,
@@ -294,7 +293,7 @@ export async function deepResearch({
             };
           }
         } catch (e: any) {
-          if (e.message && e.message.includes('Timeout')) {
+          if (e.message?.includes('Timeout')) {
             log(`Timeout error running query: ${serpQuery.query}: `, e);
           } else {
             log(`Error running query: ${serpQuery.query}: `, e);
